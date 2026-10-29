@@ -13,6 +13,9 @@ with **Docker Compose**.
 
 ## Quick start
 
+For a beginner-friendly setup **without Docker, a virtual machine, or S3**, use
+[`docs/LOCAL_WITHOUT_DOCKER.md`](docs/LOCAL_WITHOUT_DOCKER.md). It runs a smaller local sample with Python and DuckDB.
+
 Prerequisites: Docker with Compose v2, ~6 GB of RAM free for Docker, ~5 GB of disk, internet access (SODA API, image builds).
 
 ```bash

@@ -13,17 +13,18 @@ import json
 import os
 import re
 import threading
+from pathlib import Path
 
-import boto3
 import duckdb
-from botocore.client import Config
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 BUCKET = os.environ.get("S3_BUCKET", "datalake")
 ENDPOINT = os.environ.get("S3_ENDPOINT", "http://s3:8333")
-KEY, SECRET = os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"]
+LOCAL = os.environ.get("STORAGE_BACKEND", "s3").lower() == "local"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "data/local")).resolve()
+KEY, SECRET = os.environ.get("S3_ACCESS_KEY", ""), os.environ.get("S3_SECRET_KEY", "")
 TABLES = ["daily_kpis", "top_pickup_zones", "hourly_demand", "payment_mix"]
 
 app = FastAPI(title="Chicago Taxi — gold layer")
@@ -32,6 +33,8 @@ _lock = threading.Lock()  # one DuckDB connection, used one query at a time
 
 def _connect() -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
+    if LOCAL:
+        return con
     con.execute("LOAD httpfs")
     host = re.sub(r"^https?://", "", ENDPOINT)
     q = lambda v: "'" + v.replace("'", "''") + "'"  # noqa: E731  (settings come from our own .env)
@@ -49,7 +52,9 @@ def _views() -> list[str]:
     present = []
     for t in TABLES:
         try:
-            con.execute(f"CREATE OR REPLACE VIEW {t} AS SELECT * FROM read_parquet('s3://{BUCKET}/gold/{t}/*.parquet')")
+            path = str(DATA_DIR / "gold" / t / "*.parquet") if LOCAL else f"s3://{BUCKET}/gold/{t}/*.parquet"
+            path = path.replace("'", "''")
+            con.execute(f"CREATE OR REPLACE VIEW {t} AS SELECT * FROM read_parquet('{path}')")
             present.append(t)
         except duckdb.Error:
             pass
@@ -73,7 +78,7 @@ def dashboard():
 def health():
     with _lock:
         present = _views()
-    return {"storage": ENDPOINT, "gold_tables": present, "ready": len(present) == len(TABLES)}
+    return {"storage": str(DATA_DIR) if LOCAL else ENDPOINT, "gold_tables": present, "ready": len(present) == len(TABLES)}
 
 
 @app.get("/tables")
@@ -95,6 +100,14 @@ def kpis(table: str, limit: int = 1000):
 
 @app.get("/quality")
 def quality():
+    if LOCAL:
+        path = DATA_DIR / "silver" / "_quality" / "latest.json"
+        if not path.exists():
+            raise HTTPException(404, "no quality report yet: run python scripts/run_local.py")
+        return json.loads(path.read_text())
+    import boto3
+    from botocore.client import Config
+
     s3 = boto3.client("s3", endpoint_url=ENDPOINT, aws_access_key_id=KEY, aws_secret_access_key=SECRET,
                       config=Config(s3={"addressing_style": "path"}), region_name="us-east-1")
     try:

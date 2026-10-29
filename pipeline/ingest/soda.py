@@ -56,7 +56,7 @@ def fetch_page(settings: Settings, params: dict[str, str], tries: int = 6) -> by
             if r.status_code not in (429, 500, 502, 503, 504):
                 r.raise_for_status()
             log.warning("SODA answered %s (try %d/%d)", r.status_code, attempt, tries)
-        except requests.ConnectionError as e:
+        except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
             log.warning("SODA unreachable (try %d/%d): %s", attempt, tries, e)
         except requests.Timeout:
             log.warning("SODA timed out (try %d/%d)", attempt, tries)
