@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chicago Taxi KPIs</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg: #f7f7f5; --card: #fff; --ink: #1f2328; --muted: #6b7280; --accent: #2563eb; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--card); border-radius: 10px; padding: 14px; box-shadow: 0 1px 2px #0001; }
+  .card b { display: block; font-size: 22px; margin-top: 4px; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Chicago Taxi Trips — gold layer</h1>
+  <div class="muted" id="status">Loading…</div>
+  <div class="grid" id="tiles"></div>
+  <div class="charts">
+    <div class="card"><div class="muted">Revenue per day (USD)</div><canvas id="rev"></canvas></div>
+    <div class="card"><div class="muted">Trip duration per day (minutes: average, median, p90)</div><canvas id="dur"></canvas></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="muted">Top 10 pickup zones (community areas)</div>
+    <table id="zones"><thead><tr><th>#</th><th>Zone</th><th class="n">Trips</th><th class="n">Share</th><th class="n">Revenue</th><th class="n">Avg min</th></tr></thead><tbody></tbody></table>
+  </div>
+  <p class="muted">JSON: <a href="/kpis/daily_kpis">/kpis/daily_kpis</a> · <a href="/kpis/top_pickup_zones">/kpis/top_pickup_zones</a> · <a href="/quality">/quality</a> · <a href="/docs">/docs</a> (SQL endpoint)</p>
+</main>
+<script>
+const fmt = (x, d = 0) => Number(x).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+async function load() {
+  const [daily, zones, q] = await Promise.all(["/kpis/daily_kpis", "/kpis/top_pickup_zones?limit=10", "/quality"].map(u => fetch(u).then(r => r.ok ? r.json() : null)));
+  if (!daily) { document.getElementById("status").textContent = "Gold tables not built yet: trigger the taxi_pipeline DAG in Airflow (http://localhost:8080)."; return; }
+  const trips = daily.reduce((s, d) => s + d.trips, 0), revenue = daily.reduce((s, d) => s + d.revenue, 0);
+  document.getElementById("status").textContent = `${daily[0].trip_date} → ${daily.at(-1).trip_date} · ${daily.length} days`;
+  const tiles = [["Trips", fmt(trips)], ["Revenue", "$" + fmt(revenue)], ["Avg trip total", "$" + fmt(revenue / trips, 2)],
+    ["Avg duration", fmt(daily.reduce((s, d) => s + d.avg_duration_min * d.trips, 0) / trips, 1) + " min"],
+    ["Rows rejected", q ? `${fmt(q.rows_rejected)} (${fmt(q.reject_rate * 100, 2)}%)` : "?"]];
+  document.getElementById("tiles").innerHTML = tiles.map(([k, v]) => `<div class="card"><span class="muted">${k}</span><b>${v}</b></div>`).join("");
+  const labels = daily.map(d => d.trip_date);
+  new Chart(document.getElementById("rev"), { type: "bar", data: { labels, datasets: [{ label: "revenue", data: daily.map(d => d.revenue), backgroundColor: "#2563eb" }] }, options: { plugins: { legend: { display: false } } } });
+  new Chart(document.getElementById("dur"), { type: "line", data: { labels, datasets: [
+    { label: "average", data: daily.map(d => d.avg_duration_min), borderColor: "#2563eb" },
+    { label: "median", data: daily.map(d => d.median_duration_min), borderColor: "#16a34a" },
+    { label: "p90", data: daily.map(d => d.p90_duration_min), borderColor: "#dc2626" }] }, options: { elements: { point: { radius: 0 } } } });
+  document.querySelector("#zones tbody").innerHTML = (zones || []).map(z => `<tr><td>${z.rank}</td><td>${z.pickup_zone}</td><td class="n">${fmt(z.trips)}</td><td class="n">${fmt(z.share_of_trips * 100, 1)}%</td><td class="n">$${fmt(z.revenue)}</td><td class="n">${fmt(z.avg_duration_min, 1)}</td></tr>`).join("");
+}
+load();
+</script>
+</body>
+</html>
