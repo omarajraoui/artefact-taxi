@@ -2,7 +2,11 @@
 
 Ce guide explique **ce que fait le projet, pourquoi il est construit ainsi, comment il a été construit, comment le
 lancer avec Docker et Docker Compose, et comment le code a été envoyé sur GitHub**. Le `README.md` (en anglais) reste
-le résumé pour le jury ; ce guide est l'explication détaillée.
+le résumé pour le jury ; ce guide est l'explication détaillée. Trois documents complémentaires :
+
+* [`INSTALLATION.md`](INSTALLATION.md) — installer et lancer sur un autre ordinateur (Windows, macOS, Linux), de zéro ;
+* [`TECHNOLOGIES.md`](TECHNOLOGIES.md) — chaque technologie : ce que c'est, à quoi elle sert ici, où dans le code ;
+* [`PAS-A-PAS.md`](PAS-A-PAS.md) — ce qui se passe à chaque étape d'une exécution, avec les vrais chiffres.
 
 Sommaire
 1. Le projet en une page

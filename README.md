@@ -5,7 +5,11 @@ store (**bronze**), are typed, deduplicated and quality-checked with **PySpark**
 BI-ready tables (**gold**), exposed over SQL/JSON and a small dashboard. Orchestrated by **Airflow**, everything runs
 with **Docker Compose**.
 
-> 📘 Full explanation in French (why, how it was built, Docker, Docker Compose, Git/GitHub): [`docs/GUIDE.md`](docs/GUIDE.md)
+> 📘 Documentation in French:
+> [`docs/GUIDE.md`](docs/GUIDE.md) (why, how it was built, Docker, Docker Compose, Git/GitHub) ·
+> [`docs/INSTALLATION.md`](docs/INSTALLATION.md) (install on another PC: Windows, macOS, Linux) ·
+> [`docs/TECHNOLOGIES.md`](docs/TECHNOLOGIES.md) (every technology and how it is used) ·
+> [`docs/PAS-A-PAS.md`](docs/PAS-A-PAS.md) (each step of a run, with real numbers)
 
 ## Quick start
 
