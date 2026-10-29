@@ -1,4 +1,4 @@
-# Chicago Taxi Trips datalake: MinIO (object storage) + Airflow (orchestration, PySpark jobs) + API/dashboard.
+# Chicago Taxi Trips datalake: SeaweedFS (S3-compatible object storage) + Airflow (orchestration, PySpark jobs) + API/dashboard.
 # One command: `docker compose up -d --build`. The DAG runs once by itself at start-up (schedule @once).
 
 x-airflow-common: &airflow-common
@@ -15,6 +15,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__PARALLELISM: "8"
     AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    AIRFLOW__WEBSERVER__WORKERS: "2"
     PYTHONPATH: /opt/airflow
   volumes:
     - ./dags:/opt/airflow/dags
@@ -24,40 +25,61 @@ x-airflow-common: &airflow-common
   depends_on:
     postgres:
       condition: service_healthy
-    minio-init:
+    bucket-init:
       condition: service_completed_successfully
 
 services:
-  # ---------- Object storage (the datalake) ----------
-  minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+  # ---------- Object storage (the datalake): SeaweedFS, S3-compatible ----------
+  # (MinIO's free images and binaries were withdrawn in 2025: docker pull minio/minio is denied, dl.min.io answers 410.)
+  s3:
+    image: chrislusf/seaweedfs:3.80
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        printf '{"identities":[{"name":"admin","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' \
+          "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /etc/s3.json &&
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/s3.json -master.volumeSizeLimitMB=1024 -volume.max=0 -ip=s3 -ip.bind=0.0.0.0
+    env_file: .env
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # web console
+      - "8333:8333"   # S3 API
+      - "8888:8888"   # filer web UI (browse the datalake)
     volumes:
-      - minio-data:/data
+      - s3-data:/data
+    mem_limit: 768m
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8333/healthz || wget -q -S -O /dev/null http://localhost:8333/ 2>&1 | grep -q 'HTTP/'"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
 
-  # Creates the bucket once MinIO is up.
-  minio-init:
-    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 $${S3_ACCESS_KEY} $${S3_SECRET_KEY} &&
-      mc mb --ignore-existing local/$${S3_BUCKET} &&
-      echo bucket ready"
+  # Creates the bucket once the store answers (boto3, from the API image).
+  bucket-init:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: taxi-api:local
     env_file: .env
+    depends_on:
+      s3:
+        condition: service_healthy
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import os, time, boto3
+        from botocore.client import Config
+        s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"],
+                          aws_secret_access_key=os.environ["S3_SECRET_KEY"], region_name="us-east-1", config=Config(s3={"addressing_style": "path"}))
+        for i in range(30):
+            try:
+                if os.environ["S3_BUCKET"] not in [b["Name"] for b in s3.list_buckets()["Buckets"]]:
+                    s3.create_bucket(Bucket=os.environ["S3_BUCKET"])
+                print("bucket ready:", os.environ["S3_BUCKET"]); break
+            except Exception as e:
+                print("waiting for the store:", e); time.sleep(2)
+        else:
+            raise SystemExit("object store not reachable")
+    restart: "no"
 
   # ---------- Airflow metadata database ----------
   postgres:
@@ -68,6 +90,7 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    mem_limit: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airflow"]
       interval: 5s
@@ -89,6 +112,7 @@ services:
   airflow-webserver:
     <<: *airflow-common
     command: webserver
+    mem_limit: 1g
     ports:
       - "8080:8080"
     depends_on:
@@ -104,6 +128,8 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    # The Spark jobs run inside this container (local mode): SPARK_DRIVER_MEMORY must stay well under this cap.
+    mem_limit: ${SCHEDULER_MEM_LIMIT:-3g}
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -114,15 +140,17 @@ services:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
+    image: taxi-api:local
     env_file: .env
+    mem_limit: 512m
     ports:
       - "8000:8000"
     depends_on:
-      minio-init:
+      bucket-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
-  minio-data:
+  s3-data:
   postgres-data:
   airflow-logs:

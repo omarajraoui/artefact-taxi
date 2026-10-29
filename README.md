@@ -5,6 +5,8 @@ store (**bronze**), are typed, deduplicated and quality-checked with **PySpark**
 BI-ready tables (**gold**), exposed over SQL/JSON and a small dashboard. Orchestrated by **Airflow**, everything runs
 with **Docker Compose**.
 
+> 📘 Full explanation in French (why, how it was built, Docker, Docker Compose, Git/GitHub): [`docs/GUIDE.md`](docs/GUIDE.md)
+
 ## Quick start
 
 Prerequisites: Docker with Compose v2, ~6 GB of RAM free for Docker, ~5 GB of disk, internet access (SODA API, image builds).
@@ -21,7 +23,7 @@ the download (SODA serves ~50 000 rows per call).
 | What | Where |
 |---|---|
 | Airflow UI (DAG, logs) | http://localhost:8080 — `admin` / `admin` |
-| MinIO console (the datalake) | http://localhost:9001 — `minioadmin` / `minioadmin123` |
+| Datalake browser (SeaweedFS filer) | http://localhost:8888/buckets/datalake/ |
 | Dashboard over gold | http://localhost:8000 |
 | API docs (JSON + SQL endpoint) | http://localhost:8000/docs |
 
@@ -60,7 +62,7 @@ curl -s localhost:8000/sql -H 'content-type: application/json' \
             SODA API (CSV pages)                       seeds/community_areas.csv
                     │  Airflow: ingest_month × N (dynamic mapping)       │ ingest_reference
                     ▼                                                    ▼
- ┌──────────────────────────────────────── MinIO  s3://datalake ─────────────────────────────────────┐
+ ┌──────────────────────────────────────── SeaweedFS  s3://datalake ─────────────────────────────────────┐
  │ BRONZE  bronze/taxi_trips/month=YYYY-MM/page=NNNNN.csv + _manifest.json   (raw, as received)        │
  │         bronze/reference/community_areas/community_areas.csv                                         │
  │              │  Spark bronze_to_silver: types, rules, dedup, enrichment, quality gate               │
@@ -110,6 +112,19 @@ deduplicated on `trip_id` (latest ingestion wins; extra copies are rejected as `
 Measured on a real two-day sample (2–3 Jan 2023, 22 714 rows, same code, local Spark): 2.2 % rejected
 (479 `bad_duration`, 16 `bad_amount`, 7 `bad_distance`, 3 `end_before_start`); O'Hare is the top pickup zone (22.8 %).
 
+## Full run (measured, 29 Oct 2026, 4 vCPU / 5.8 GB VM)
+
+`docker compose up -d --build`, DAG started by itself:
+
+| Step | Result | Time |
+|---|---|---|
+| ingest_month × 3 | 1,446,439 rows in 30 SODA pages (Jan / Feb / Mar in parallel) | ~3 min |
+| bronze_to_silver | 1,416,392 clean, 30,047 rejected (2.08 %): 28,767 `bad_duration`, 1,347 `bad_amount`, 36 `end_before_start`, 25 `bad_distance`; gate passed | 3 min 30 s |
+| silver_to_gold | daily_kpis 90 rows, top_pickup_zones 78, hourly_demand 168, payment_mix 7 | 1 min 10 s |
+
+Q1 2023 on clean trips: $36.46 M revenue, 19.4 min average duration; top pickup zones: Near North Side (21.1 %),
+O'Hare (16.9 %, highest revenue), Loop (15.9 %). Peak memory stayed under each container's cap.
+
 ## Technical choices and trade-offs
 
 * **Airflow 2.10, LocalExecutor + Postgres** — the most common orchestrator in client contexts; dynamic task mapping
@@ -118,10 +133,11 @@ Measured on a real two-day sample (2–3 Jan 2023, 22 714 rows, same code, local
 * **Spark in local mode inside the Airflow image (`spark-submit` from a BashOperator)** rather than a Spark cluster in
   Compose: one fewer moving part and less RAM for a few million rows; the jobs are plain `spark-submit` scripts, so
   pointing `SPARK_MASTER` at a cluster (or using `SparkSubmitOperator`) needs no code change.
-* **MinIO** as the S3-compatible object store, accessed by Spark through S3A (`hadoop-aws` jars baked into the image,
+* **SeaweedFS** as the S3-compatible object store (MinIO was the first choice, but its free Docker images and binaries
+  were withdrawn in 2025: `docker pull minio/minio` is denied, `dl.min.io` answers 410), accessed by Spark through S3A (`hadoop-aws` jars baked into the image,
   no download at run time) and by boto3 for ingestion. Switching to AWS S3/GCS is configuration.
-* **Parquet** for silver/gold (columnar, typed, compressed). Silver partitioned by `trip_date` with dynamic partition
-  overwrite (re-runs replace only the days they touch). Gold tables are small: one file each.
+* **Parquet** for silver/gold (columnar, typed, compressed). Silver partitioned by `trip_date`; each run rewrites the window it covers. Writes use the
+  **S3A magic committer** (no rename on the object store). Gold tables are small: one file each.
 * **Raw kept untouched**: bronze is the API's own CSV, so any silver rule can be changed and replayed without
   re-downloading.
 * **Quality as data**: rejects are stored with their reasons and counted, not silently filtered; the gate threshold is
@@ -130,7 +146,7 @@ Measured on a real two-day sample (2–3 Jan 2023, 22 714 rows, same code, local
   published (no hidden shift).
 * **Community areas** come from a versioned seed (77 official areas) rather than a second API, so the join is
   reproducible; trips outside Chicago (null area) are kept as `Unknown / outside Chicago`.
-* **Exposition with DuckDB + FastAPI**: SQL straight on the gold Parquet in MinIO, no extra database to load; the SQL
+* **Exposition with DuckDB + FastAPI**: SQL straight on the gold Parquet in SeaweedFS, no extra database to load; the SQL
   endpoint is read-only (single SELECT/WITH).
 
 ## With more time
@@ -147,7 +163,7 @@ Measured on a real two-day sample (2–3 Jan 2023, 22 714 rows, same code, local
 ## Repository
 
 ```
-docker-compose.yml          MinIO, Postgres, Airflow (init, webserver, scheduler), API
+docker-compose.yml          SeaweedFS, Postgres, Airflow (init, webserver, scheduler), API
 .env.example                every setting (period, storage, quality threshold)
 docker/airflow/Dockerfile   Airflow + Java + PySpark + S3A jars
 docker/api/Dockerfile       FastAPI + DuckDB (httpfs)

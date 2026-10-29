@@ -22,3 +22,11 @@ USER airflow
 COPY docker/airflow/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir "apache-airflow==2.10.5" -r /tmp/requirements.txt \
       --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt"
+
+# Cloud committers for Spark (S3A "magic" committer): files are written straight to their place, no rename on the object
+# store. Without it, the final rename of the _temporary folders failed on SeaweedFS (first full run, 29 Oct 2026).
+USER root
+RUN curl -fsSL -o /opt/spark-jars/spark-hadoop-cloud_2.12-3.5.4.jar \
+      https://repo1.maven.org/maven2/org/apache/spark/spark-hadoop-cloud_2.12/3.5.4/spark-hadoop-cloud_2.12-3.5.4.jar
+ENV SPARK_EXTRA_JARS=/opt/spark-jars/hadoop-aws-3.3.4.jar,/opt/spark-jars/aws-java-sdk-bundle-1.12.262.jar,/opt/spark-jars/spark-hadoop-cloud_2.12-3.5.4.jar
+USER airflow

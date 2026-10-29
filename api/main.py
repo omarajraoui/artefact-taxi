@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 BUCKET = os.environ.get("S3_BUCKET", "datalake")
-ENDPOINT = os.environ.get("S3_ENDPOINT", "http://minio:9000")
+ENDPOINT = os.environ.get("S3_ENDPOINT", "http://s3:8333")
 KEY, SECRET = os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"]
 TABLES = ["daily_kpis", "top_pickup_zones", "hourly_demand", "payment_mix"]
 

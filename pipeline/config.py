@@ -31,7 +31,7 @@ class Settings:
     def from_env() -> "Settings":
         cap = os.environ.get("MAX_ROWS_PER_MONTH", "").strip()
         return Settings(
-            s3_endpoint=_env("S3_ENDPOINT", "http://minio:9000"),
+            s3_endpoint=_env("S3_ENDPOINT", "http://s3:8333"),
             s3_access_key=_env("S3_ACCESS_KEY"),
             s3_secret_key=_env("S3_SECRET_KEY"),
             bucket=_env("S3_BUCKET", "datalake"),

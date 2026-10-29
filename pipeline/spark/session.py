@@ -16,7 +16,6 @@ def spark_session(app: str, settings: Settings | None = None) -> SparkSession:
         # Timestamps are published as Chicago wall-clock time without a zone: read and kept as they are.
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.shuffle.partitions", os.environ.get("SPARK_SHUFFLE_PARTITIONS", "16"))
-        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .config("spark.ui.showConsoleProgress", "false")
     )
     if settings is not None:
@@ -31,5 +30,11 @@ def spark_session(app: str, settings: Settings | None = None) -> SparkSession:
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
             .config("spark.hadoop.fs.s3a.connection.ssl.enabled", str(settings.s3_endpoint.startswith("https")).lower())
             .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
+            # S3A magic committer: tasks write straight to the object store (multipart uploads completed at commit),
+            # no rename of _temporary folders, which object stores do badly (copy + delete).
+            .config("spark.hadoop.fs.s3a.committer.name", "magic")
+            .config("spark.hadoop.fs.s3a.committer.magic.enabled", "true")
+            .config("spark.sql.sources.commitProtocolClass", "org.apache.spark.internal.io.cloud.PathOutputCommitProtocol")
+            .config("spark.sql.parquet.output.committer.class", "org.apache.spark.internal.io.cloud.BindingParquetOutputCommitter")
         )
     return b.getOrCreate()
