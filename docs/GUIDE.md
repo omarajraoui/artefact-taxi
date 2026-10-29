@@ -2,7 +2,9 @@
 
 Ce guide explique **ce que fait le projet, pourquoi il est construit ainsi, comment il a été construit, comment le
 lancer avec Docker et Docker Compose, et comment le code a été envoyé sur GitHub**. Le `README.md` (en anglais) reste
-le résumé pour le jury ; ce guide est l'explication détaillée. Trois documents complémentaires :
+le résumé pour le jury ; ce guide est l'explication détaillée. Documents complémentaires :
+
+* [`COMPRENDRE.md`](COMPRENDRE.md) — **à lire en premier** : le problème posé, la solution exigence par exigence, pourquoi Docker, les notions et les ressources pour apprendre ;
 
 * [`INSTALLATION.md`](INSTALLATION.md) — installer et lancer sur un autre ordinateur (Windows, macOS, Linux), de zéro ;
 * [`TECHNOLOGIES.md`](TECHNOLOGIES.md) — chaque technologie : ce que c'est, à quoi elle sert ici, où dans le code ;

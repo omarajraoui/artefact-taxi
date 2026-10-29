@@ -5,7 +5,7 @@ store (**bronze**), are typed, deduplicated and quality-checked with **PySpark**
 BI-ready tables (**gold**), exposed over SQL/JSON and a small dashboard. Orchestrated by **Airflow**, everything runs
 with **Docker Compose**.
 
-> 📘 Documentation in French:
+> 📘 Documentation in French — start with [`docs/COMPRENDRE.md`](docs/COMPRENDRE.md) (the problem, the solution, why Docker, concepts and learning resources):
 > [`docs/GUIDE.md`](docs/GUIDE.md) (why, how it was built, Docker, Docker Compose, Git/GitHub) ·
 > [`docs/INSTALLATION.md`](docs/INSTALLATION.md) (install on another PC: Windows, macOS, Linux) ·
 > [`docs/TECHNOLOGIES.md`](docs/TECHNOLOGIES.md) (every technology and how it is used) ·
